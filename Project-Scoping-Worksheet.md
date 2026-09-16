@@ -2,7 +2,7 @@
 
 **Week 2 — From Project Idea to Testable Investigation**
 
-**Group members:**  
+**Group members: Albert Hjelmborg, Gustav Kabel, Julian ???**  
 **Date:**  
 
 ---
