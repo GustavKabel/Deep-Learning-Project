@@ -38,7 +38,7 @@ Ask a TA for feedback before the end of the session. You will refine this worksh
 
 Explain the problem in plain language. Avoid model names for now.
 
-> Example: “Given an image of a plant leaf, predict which disease is present.”
+> “Given a satellite image potentially containing clouds, detect clouds and determine cloud density”
 
 **Our problem:**
 
@@ -46,18 +46,20 @@ Explain the problem in plain language. Avoid model names for now.
 
 Who might care about the result? What makes the problem non-trivial?
 
+> "Solar plant operators who want to optimize usage of solar panels. Energy Trades who wants to predict potential energy trades"
+
 ## 3. What are the inputs and outputs?
 
 | | Description | Example |
 |---|---|---|
-| **Input** | | |
-| **Output/target** | | |
+| **Input** | Stelilte Images | |
+| **Output/target** | Classification: Cloudy/Clear - Detection: Clear/Semi transparrent cloud/Cloudy | |
 
 ## 4. What is the primary task type?
 
-- [ ] Image classification
+- [X] Image classification
 - [ ] Object detection
-- [ ] Semantic or instance segmentation
+- [X] Semantic or instance segmentation
 - [ ] Image generation
 - [ ] Regression
 - [ ] Retrieval, matching, or verification
@@ -77,6 +79,7 @@ The project should be an investigation, not only an application of a pretrained 
 Try to express it as a comparison:
 
 > “How does **X** affect **Y** under **Z conditions**, compared with **baseline B**?”
+> ""
 
 Possible factors include augmentation, loss function, amount of training data, fine-tuning strategy, model capacity, class imbalance, label noise, domain shift, or another justified method.
 
