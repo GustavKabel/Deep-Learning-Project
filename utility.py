@@ -50,7 +50,7 @@ class Sentinel2CloudMaskDataset(Dataset):
             img_data = np.zeros((13, 512, 512), dtype=np.float32)
             mask_data = np.zeros((512, 512), dtype=np.int64)
 
-        return torch.tensor(img_data), torch.tensor(mask_data), str(file_path)
+        return torch.tensor(img_data, dtype=torch.float32), torch.tensor(mask_data, dtype=torch.long), str(file_path)
 
 
 # ==========================================
