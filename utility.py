@@ -1,8 +1,61 @@
 import torch
-from torch.utils.data import DataLoader
+from torch.utils.data import Dataset, DataLoader
+import xarray as xr
 import numpy as np
+from pathlib import Path
 
 
+# ==========================================
+# 1. PyTorch Dataset Wrapper for NetCDF (13 Bands)
+# ==========================================
+class Sentinel2CloudMaskDataset(Dataset):
+    def __init__(self, root_dir, global_mean=None, global_std=None):
+        """
+        Custom PyTorch Dataset for loading Sentinel-2 NetCDF datacubes.
+        """
+        # Recursively find all .nc files in the provided directory (e.g., train/ or test/)
+        self.files = sorted(list(Path(root_dir).rglob("*.nc")))
+        self.global_mean = global_mean
+        self.global_std = global_std
+
+        # The 13 spectral bands provided in the KappaZeta dataset
+        self.bands = ["B01", "B02", "B03", "B04", "B05", "B06",
+                      "B07", "B08", "B8A", "B09", "B10", "B11", "B12"]
+
+    def __len__(self):
+        return len(self.files)
+
+    def __getitem__(self, idx):
+        file_path = self.files[idx]
+
+        try:
+            # Open the NetCDF file using the h5netcdf engine
+            with xr.open_dataset(file_path, engine="h5netcdf") as ds:
+                # Extract each band and stack them into a (13, Height, Width) tensor
+                band_arrays = [ds[band].values for band in self.bands]
+                img_data = np.stack(band_arrays, axis=0).astype(np.float32)
+
+                # Extract the ground truth label mask (Height, Width)
+                mask_data = ds['Label'].values.astype(np.int64)
+
+                # Apply Z-score standardization if stats are provided via config.py
+                if self.global_mean is not None and self.global_std is not None:
+                    mean_arr = np.array(self.global_mean).reshape(-1, 1, 1)
+                    std_arr = np.array(self.global_std).reshape(-1, 1, 1)
+                    img_data = (img_data - mean_arr) / (std_arr + 1e-8)
+
+        except Exception as e:
+            # Fallback for corrupted NetCDF files to prevent the DataLoader from crashing
+            print(f"Error loading {file_path}: {e}")
+            img_data = np.zeros((13, 512, 512), dtype=np.float32)
+            mask_data = np.zeros((512, 512), dtype=np.int64)
+
+        return torch.tensor(img_data), torch.tensor(mask_data), str(file_path)
+
+
+# ==========================================
+# 2. Dataset Statistic Utilities
+# ==========================================
 def compute_global_stats(dataset, batch_size=16):
     """Computes global mean and std across the dataset using Welford's-like batching."""
     loader = DataLoader(dataset, batch_size=batch_size, shuffle=False, num_workers=4)
@@ -13,11 +66,9 @@ def compute_global_stats(dataset, batch_size=16):
 
     print("Computing global statistics...")
     for i, (images, _, _) in enumerate(loader):
-        # images shape: (batch_size, 13, 512, 512)
         b, c, h, w = images.shape
         pixels_in_batch = b * h * w
 
-        # Reshape to (13, -1) to sum across all pixels for each band
         images_flat = images.numpy().transpose(1, 0, 2, 3).reshape(c, -1)
 
         sum_bands += images_flat.sum(axis=1)
@@ -28,19 +79,14 @@ def compute_global_stats(dataset, batch_size=16):
             print(f"Processed batch {i}...")
 
     mean = sum_bands / pixel_count
-    # Variance = E[X^2] - (E[X])^2
     std = np.sqrt((sum_sq_bands / pixel_count) - (mean ** 2))
 
     return mean, std
 
 
-import torch
-from torch.utils.data import DataLoader
-
-
 def compute_full_class_distribution(dataset, batch_size=16):
+    """Computes class imbalance weights based on inverse frequency."""
     print("\n--- Computing Full Pixel Class Distribution ---")
-    # Using num_workers=4 to speed up NetCDF I/O
     loader = DataLoader(dataset, batch_size=batch_size, shuffle=False, num_workers=4)
 
     class_names = {0: 'MISSING', 1: 'CLEAR', 2: 'CLOUD SHADOW',
@@ -49,7 +95,6 @@ def compute_full_class_distribution(dataset, batch_size=16):
     global_counts = torch.zeros(6, dtype=torch.int64)
 
     for i, (_, masks, _) in enumerate(loader):
-        # Flatten the entire batch of masks and count integer occurrences
         counts = torch.bincount(masks.flatten(), minlength=6)
         global_counts += counts
 
@@ -65,22 +110,11 @@ def compute_full_class_distribution(dataset, batch_size=16):
         print(f"{class_names[cls_idx]:<25}: {count:>12} pixels ({pct:>5.2f}%)")
 
     print("\n--- Recommended E1 Loss Weights (Inverse Frequency) ---")
-    # Calculates weights prioritizing minority classes, while masking 0 and 5
     for cls_idx in range(6):
         count = global_counts[cls_idx].item()
+        # Classes 0 and 5 are zeroed out (masked) per the project proposal
         if cls_idx in [0, 5] or count == 0:
             weight = 0.0
         else:
-            # We divide by 4.0 because there are 4 valid classes we care about learning
             weight = total_pixels / (4.0 * count)
         print(f"Weight Class {cls_idx} ({class_names[cls_idx]}): {weight:.4f}")
-
-# --- Execution ---
-# compute_full_class_distribution(raw_dataset, batch_size=4)
-
-# --- Execution ---
-# Ensure you only pass the training split directory here, not the test split!
-# train_dataset = Sentinel2CloudMaskDataset(train_dir)
-# global_mean, global_std = compute_global_stats(train_dataset)
-# print(f"GLOBAL_MEAN = {list(global_mean)}")
-# print(f"GLOBAL_STD = {list(global_std)}")
