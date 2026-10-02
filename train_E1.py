@@ -13,10 +13,10 @@ from model import get_unet_resnet50
 # --- Hyperparameters ---
 BATCH_SIZE = 32
 EPOCHS = 10
-LEARNING_RATE = 1e-3  # Your optimal LR from the sweep!
+LEARNING_RATE = 1e-3  # Optimal LR from the sweep
 
 # --- Checkpoint Resuming ---
-# Example: "/content/drive/MyDrive/unet_resnet50_epoch6.pth"
+# Example: "/content/drive/MyDrive/unet_resnet50_E1_epoch6.pth"
 RESUME_CHECKPOINT = None
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -38,9 +38,13 @@ train_loader = DataLoader(
     pin_memory=True
 )
 
-# 3. Initialize Model, Loss, and Optimizer
+# 3. Initialize Model, Loss (with weights), and Optimizer
 model = get_unet_resnet50(in_channels=13, num_classes=6).to(device)
-criterion = nn.CrossEntropyLoss()
+
+# --- E1 MODIFICATION: Inject inverse frequency class weights ---
+class_weights = torch.tensor(config.LOSS_WEIGHTS, dtype=torch.float32).to(device)
+criterion = nn.CrossEntropyLoss(weight=class_weights)
+
 optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE)
 
 # 4. Resume from Checkpoint (if provided)
@@ -58,7 +62,8 @@ for epoch in range(start_epoch, EPOCHS):
     running_loss = 0.0
     iou_metric.reset()
 
-    loop = tqdm(train_loader, desc=f"Epoch {epoch + 1}/{EPOCHS}")
+    # Updated progress bar to reflect E1
+    loop = tqdm(train_loader, desc=f"Epoch {epoch + 1}/{EPOCHS} (E1 Weighted)")
 
     for images, masks, _ in loop:
         images, masks = images.to(device), masks.to(device)
@@ -85,13 +90,13 @@ for epoch in range(start_epoch, EPOCHS):
     valid_ious = per_class_iou[1:5]
     macro_miou = valid_ious.mean().item()
 
-    print(f"\n--- End of Epoch {epoch + 1} ---")
+    print(f"\n--- End of Epoch {epoch + 1} (E1) ---")
     print(f"Average Loss: {epoch_loss:.4f}")
     print(f"Macro mIoU (Valid Classes): {macro_miou:.4f}")
     print(f"Class 2 (Cloud Shadow) IoU: {per_class_iou[2].item():.4f}")
     print("-" * 30 + "\n")
 
-    # Save checkpoint to Google Drive to survive Colab disconnects
-    save_path = f"/content/drive/MyDrive/unet_resnet50_epoch{epoch + 1}.pth"
+    # --- E1 MODIFICATION: Save checkpoint to a unique E1 path ---
+    save_path = f"/content/drive/MyDrive/unet_resnet50_E1_epoch{epoch + 1}.pth"
     save_checkpoint(save_path, model, optimizer, epoch + 1, {'lr': LEARNING_RATE})
     print(f"Checkpoint saved to {save_path}\n")
