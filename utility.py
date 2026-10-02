@@ -2,8 +2,33 @@ import torch
 from torch.utils.data import Dataset, DataLoader
 import xarray as xr
 import numpy as np
+import random
 from pathlib import Path
 
+def set_seed(seed):
+    """Makes weight initialization and batch order reproducible."""
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
+
+def save_checkpoint(path, model, optimizer, epoch, config_dict=None):
+    """Saves model and optimizer state to survive disconnects."""
+    torch.save({
+        'model': model.state_dict(),
+        'optimizer': optimizer.state_dict(),
+        'epoch': epoch,
+        'config': config_dict
+    }, path)
+
+def load_checkpoint(path, model, optimizer, device):
+    """Loads state to resume training."""
+    ckpt = torch.load(path, map_location=device)
+    model.load_state_dict(ckpt['model'])
+    if optimizer and 'optimizer' in ckpt:
+        optimizer.load_state_dict(ckpt['optimizer'])
+    return ckpt.get('epoch', 0), ckpt.get('config', {})
 
 # ==========================================
 # 1. PyTorch Dataset Wrapper for NetCDF (13 Bands)
